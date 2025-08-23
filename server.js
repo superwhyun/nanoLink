@@ -14,7 +14,13 @@ const metascraper = require('metascraper')([
   require('metascraper-lang')()
 ]);
 const got = require('got');
+const cheerio = require('cheerio');
+const OpenAI = require('openai');
 require('dotenv').config();
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 const app = express();
 
@@ -51,6 +57,99 @@ const isValidUrl = (string) => {
     return true;
   } catch (_) {
     return false;
+  }
+};
+
+const extractTextFromHtml = (html) => {
+  const $ = cheerio.load(html);
+  
+  // Remove unnecessary elements
+  $('script').remove();
+  $('style').remove();
+  $('nav').remove();
+  $('footer').remove();
+  $('aside').remove();
+  $('.advertisement, .ads, .sidebar').remove();
+  
+  const titleContent = $('title').text().trim();
+  const headings = $('h1, h2, h3').map((i, el) => $(el).text().trim()).get().join(' ');
+  const metaDescription = $('meta[name="description"]').attr('content') || '';
+  const textContent = $('body').text().replace(/\s+/g, ' ').trim();
+  
+  return {
+    title: titleContent,
+    headings: headings.substring(0, 500),
+    metaDescription,
+    content: textContent.substring(0, 2000)
+  };
+};
+
+const enhanceMetadataWithGPT = async (url, textData, existingMetadata) => {
+  if (!config.openaiApiKey || config.openaiApiKey === 'your_openai_api_key_here') {
+    return existingMetadata;
+  }
+
+  // Check which fields need enhancement
+  const missingFields = [];
+  if (!existingMetadata.description) missingFields.push('description');
+  if (!existingMetadata.author) missingFields.push('author');
+  if (!existingMetadata.publisher) missingFields.push('publisher');
+  if (!existingMetadata.lang) missingFields.push('lang');
+  
+  if (missingFields.length === 0) {
+    return existingMetadata;
+  }
+
+  try {
+    const prompt = `웹페이지 메타데이터 추출:
+
+URL: ${url}
+제목: ${textData.title}
+주요 헤딩: ${textData.headings}
+기존 메타 설명: ${textData.metaDescription}
+본문 내용: ${textData.content}
+
+현재 추출된 정보:
+${JSON.stringify(existingMetadata, null, 2)}
+
+부족한 다음 정보를 JSON 형태로만 응답해주세요 (다른 설명 없이):
+{
+  "description": "페이지 요약 (50-160자, 한국어 사이트면 한국어로)",
+  "author": "작성자명 또는 null",
+  "publisher": "발행처명 또는 null",
+  "lang": "언어코드(ko/en/etc) 또는 null"
+}`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{
+        role: "user",
+        content: prompt
+      }],
+      max_tokens: 500
+    });
+
+    const gptResult = JSON.parse(response.choices[0].message.content);
+    
+    // Merge with existing metadata, keeping existing values if they exist
+    const enhanced = { ...existingMetadata };
+    if (!enhanced.description && gptResult.description && gptResult.description !== 'null') {
+      enhanced.description = gptResult.description;
+    }
+    if (!enhanced.author && gptResult.author && gptResult.author !== 'null') {
+      enhanced.author = gptResult.author;
+    }
+    if (!enhanced.publisher && gptResult.publisher && gptResult.publisher !== 'null') {
+      enhanced.publisher = gptResult.publisher;
+    }
+    if (!enhanced.lang && gptResult.lang && gptResult.lang !== 'null') {
+      enhanced.lang = gptResult.lang;
+    }
+    
+    return enhanced;
+  } catch (error) {
+    console.error('GPT enhancement failed:', error);
+    return existingMetadata;
   }
 };
 
@@ -94,18 +193,24 @@ app.get('/api/metadata', async (req, res) => {
 
     const metadata = await metascraper({ html, url });
 
+    // Extract text content for GPT enhancement
+    const textData = extractTextFromHtml(html);
+    
+    // Enhance metadata with GPT if fields are missing
+    const enhancedMetadata = await enhanceMetadataWithGPT(url, textData, metadata);
+
     res.json({
       status: true,
       data: {
-        lang: metadata.lang || null,
-        author: metadata.author || null,
-        title: metadata.title || null,
-        description: metadata.description || null,
-        publisher: metadata.publisher || null,
-        image: metadata.image || null,
-        logo: metadata.logo || null,
-        url: metadata.url || url,
-        date: metadata.date || null
+        lang: enhancedMetadata.lang || null,
+        author: enhancedMetadata.author || null,
+        title: enhancedMetadata.title || null,
+        description: enhancedMetadata.description || null,
+        publisher: enhancedMetadata.publisher || null,
+        image: enhancedMetadata.image || null,
+        logo: enhancedMetadata.logo || null,
+        url: enhancedMetadata.url || url,
+        date: enhancedMetadata.date || null
       }
     });
 

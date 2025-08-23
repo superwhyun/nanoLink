@@ -12,6 +12,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "cheerio": "^1.1.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
@@ -27,7 +28,8 @@
     "metascraper-logo": "^5.49.1",
     "metascraper-publisher": "^5.49.1",
     "metascraper-title": "^5.49.1",
-    "metascraper-url": "^5.49.1"
+    "metascraper-url": "^5.49.1",
+    "openai": "^5.15.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
