@@ -89,14 +89,8 @@ const enhanceMetadataWithGPT = async (url, textData, existingMetadata) => {
     return existingMetadata;
   }
 
-  // Check which fields need enhancement
-  const missingFields = [];
-  if (!existingMetadata.description) missingFields.push('description');
-  if (!existingMetadata.author) missingFields.push('author');
-  if (!existingMetadata.publisher) missingFields.push('publisher');
-  if (!existingMetadata.lang) missingFields.push('lang');
-  
-  if (missingFields.length === 0) {
+  // Only call GPT if description is missing
+  if (existingMetadata.description) {
     return existingMetadata;
   }
 
@@ -120,16 +114,14 @@ ${JSON.stringify(existingMetadata, null, 2)}
   "lang": "언어코드(ko/en/etc) 또는 null"
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{
-        role: "user",
-        content: prompt
-      }],
-      max_tokens: 500
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5-nano",
+      messages: [{ role: "user", content: prompt }]
     });
 
-    const gptResult = JSON.parse(response.choices[0].message.content);
+    const responseText = completion.choices?.[0]?.message?.content || "";
+    console.log(responseText);
+    const gptResult = JSON.parse(responseText);
     
     // Merge with existing metadata, keeping existing values if they exist
     const enhanced = { ...existingMetadata };
