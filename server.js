@@ -46,6 +46,26 @@ const limiter = rateLimit({
   }
 });
 
+// Request logging middleware
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.path} - Request received`);
+  
+  // Store start time for response logging
+  req.startTime = Date.now();
+  
+  // Override res.json to log responses
+  const originalJson = res.json;
+  res.json = function(data) {
+    const duration = Date.now() - req.startTime;
+    const responseTimestamp = new Date().toISOString();
+    console.log(`[${responseTimestamp}] ${req.method} ${req.path} - ${res.statusCode} - ${duration}ms`);
+    return originalJson.call(this, data);
+  };
+  
+  next();
+});
+
 app.use(helmet());
 app.use(cors({ origin: config.corsOrigin }));
 app.use(limiter);
